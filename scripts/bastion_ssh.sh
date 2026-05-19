@@ -10,7 +10,7 @@ export PYTHONWARNINGS="ignore" # Suppress OCI CLI warnings
 
 # --- Default Values ---
 SSH_PRIV_KEY_FILE="$HOME/.ssh/id_rsa"
-AUTO_CONNECT=false
+AUTO_CONNECT=true
 TTL=10800 # 3 hours in seconds
 
 # --- Help Message ---
@@ -18,7 +18,7 @@ show_help() {
     echo "Usage: $0 [options]"
     echo "Options:"
     echo "  -i <key_path>  SSH private key path (default: $HOME/.ssh/id_rsa)"
-    echo "  -c             Connect automatically after creating session"
+    echo "  -c             Connect automatically (default: true)"
     echo "  -t <seconds>   Session TTL in seconds (default: 10800)"
     echo "  -d <tf_dir>    Path to terraform directory (default: auto-detect)"
     echo "  -h             Show this help message"
@@ -124,7 +124,17 @@ else
     echo "[3/4] セッションがアクティブになるのを待機中..."
     
     # Wait for session to be ACTIVE
-    oci bastion session get --session-id "$SESSION_ID" --wait-for-state ACTIVE --wait-interval-seconds 10 > /dev/null
+    while true; do
+        STATE=$(oci bastion session get --session-id "$SESSION_ID" | jq -r '.data."lifecycle-state"')
+        if [ "$STATE" == "ACTIVE" ]; then
+            echo "  セッションがアクティブになりました。"
+            break
+        elif [ "$STATE" == "FAILED" ] || [ "$STATE" == "DELETED" ] || [ "$STATE" == "DELETING" ]; then
+            echo "Error: セッションの状態が $STATE になりました。"
+            exit 1
+        fi
+        sleep 10
+    done
 fi
 
 # --- Get Session Details ---
@@ -134,7 +144,8 @@ SSH_COMMAND=$(echo "$SESSION_JSON" | jq -r '.data."ssh-metadata".command')
 
 if [ -n "$SSH_COMMAND" ] && [ "$SSH_COMMAND" != "null" ]; then
     # Use // to replace ALL occurrences of <privateKey>
-    EXEC_COMMAND="${SSH_COMMAND//<privateKey>/$SSH_PRIV_KEY_FILE}"
+    # Append -t "sudo su -" to automatically switch to root upon login
+    EXEC_COMMAND="${SSH_COMMAND//<privateKey>/$SSH_PRIV_KEY_FILE} -t \"sudo su -\""
     
     echo "--------------------------------------------------"
     echo "SSH接続コマンド:"
