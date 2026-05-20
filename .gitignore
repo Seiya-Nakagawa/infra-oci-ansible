@@ -1,0 +1,14 @@
+# Antigravity CLI
+.antigravitycli/
+
+# Ansible
+*.retry
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS
+.DS_Store
+.thumbs.db
