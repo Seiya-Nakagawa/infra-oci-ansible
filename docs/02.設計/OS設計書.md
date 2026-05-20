@@ -87,6 +87,7 @@
   - 管理: `vim`, `tmux`, `git`, `curl`, `wget`, `rsync`, `htop`, `tree`, `jq`
   - ネットワーク: `net-tools`, `iputils-ping`, `traceroute`, `dnsutils`
   - システム・セキュリティ: `software-properties-common`, `unzip`, `ufw`, `cloud-utils`, `auditd`, `apparmor-utils`
+  - バックエンド・DB (ホスト導入用): `php-cli`, `php-fpm`, `php-mysql`, `php-mbstring`, `php-xml`, `php-curl`, `mysql-server`, `mysql-client`
 - **設定ファイル**:
   - リポジトリ: `/etc/apt/sources.list.d/ubuntu.sources`
   - 自動更新: `/etc/apt/apt.conf.d/50unattended-upgrades`, `/etc/apt/apt.conf.d/20auto-upgrades`
