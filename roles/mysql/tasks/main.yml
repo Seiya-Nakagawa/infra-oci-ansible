@@ -1,0 +1,74 @@
+---
+# MySQL Setup and Configuration Tasks
+
+- name: Install MySQL packages and python3-pymysql
+  apt:
+    name:
+      - mysql-server
+      - mysql-client
+      - python3-pymysql
+    state: present
+
+- name: Configure MySQL server mysqld.cnf
+  template:
+    src: mysqld.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    mode: '0640'
+  register: mysql_config
+
+- name: Ensure MySQL service is enabled and started
+  service:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Restart MySQL if config changed
+  service:
+    name: mysql
+    state: restarted
+  when: mysql_config.changed
+
+# Security Hardening (Equivalent to mysql_secure_installation)
+- name: Remove anonymous MySQL users
+  mysql_user:
+    name: ""
+    state: absent
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Disallow root remote login
+  mysql_user:
+    name: root
+    host: "{{ item }}"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop:
+    - "{{ ansible_hostname }}"
+    - "127.0.0.1"
+    - "::1"
+
+- name: Remove test database
+  mysql_db:
+    name: test
+    state: absent
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+# Database and App User Setup
+- name: Create application databases
+  mysql_db:
+    name: "{{ item.name }}"
+    encoding: "{{ item.encoding }}"
+    collation: "{{ item.collation }}"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop: "{{ mysql_databases }}"
+
+- name: Create application users and grant privileges
+  mysql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    priv: "{{ item.priv }}"
+    host: "{{ item.host }}"
+    state: present
+    auth_plugin: caching_sha2_password
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  loop: "{{ mysql_users }}"

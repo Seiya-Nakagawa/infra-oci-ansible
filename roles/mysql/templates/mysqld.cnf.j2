@@ -1,0 +1,26 @@
+# Custom MySQL configurations
+[mysqld]
+user            = mysql
+bind-address            = 127.0.0.1
+mysqlx-bind-address     = 127.0.0.1
+key_buffer_size         = 16M
+myisam-recover-options  = BACKUP
+
+# Connection settings
+max_connections        = 151
+
+# Fine Tuning & Buffers
+innodb_buffer_pool_size = {{ mysql_innodb_buffer_pool_size | default('12G') }}
+innodb_log_file_size    = 1G
+innodb_flush_log_at_trx_commit = 1
+
+# Character Sets
+character-set-server   = utf8mb4
+collation-server       = utf8mb4_0900_ai_ci
+
+# Log settings
+log_error = /var/log/mysql/error.log
+slow_query_log          = 1
+slow_query_log_file     = /var/log/mysql/mysql-slow.log
+long_query_time         = 2.0
+log_queries_not_using_indexes = 0

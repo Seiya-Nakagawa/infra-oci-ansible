@@ -1,0 +1,33 @@
+# OCI Portfolio Infrastructure Common Variables
+
+# System settings
+system_hostname: "oci-portfolio"
+system_timezone: "Asia/Tokyo"
+system_locale: "ja_JP.UTF-8"
+
+# System limits
+sysctl_parameters:
+  - { name: "net.ipv4.conf.all.accept_redirects", value: 0 }
+  - { name: "net.ipv4.conf.all.send_redirects", value: 0 }
+  - { name: "net.ipv4.tcp_syncookies", value: 1 }
+  - { name: "net.ipv6.conf.all.disable_ipv6", value: 1 }
+  - { name: "kernel.randomize_va_space", value: 2 }
+  - { name: "fs.file-max", value: 2097152 }
+  - { name: "fs.nr_open", value: 1048576 }
+  - { name: "vm.max_map_count", value: 262144 }
+
+# Kubernetes settings
+k8s_version: "1.30"
+pod_network_cidr: "10.244.0.0/16"
+
+# MySQL settings
+mysql_databases:
+  - name: "laravel_db"
+    encoding: "utf8mb4"
+    collation: "utf8mb4_0900_ai_ci"
+
+mysql_users:
+  - name: "laravel_user"
+    password: "{{ vault_mysql_password | default('DummyPassword123!') }}"
+    priv: "laravel_db.*:ALL"
+    host: "localhost"

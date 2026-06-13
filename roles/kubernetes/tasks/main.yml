@@ -1,0 +1,220 @@
+---
+# Kubernetes Setup and Configuration Tasks
+
+# 1. Kernel modules and Sysctl for Kubernetes
+- name: Load overlay and br_netfilter modules immediately
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Configure kernel modules to load on boot
+  copy:
+    content: |
+      overlay
+      br_netfilter
+    dest: /etc/modules-load.d/k8s.conf
+    mode: '0644'
+
+- name: Configure sysctl parameters for Kubernetes
+  copy:
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+    dest: /etc/sysctl.d/k8s.conf
+    mode: '0644'
+
+- name: Apply sysctl parameters
+  command: sysctl --system
+  changed_when: true
+
+# 2. Container Runtime (containerd)
+- name: Install containerd
+  apt:
+    name: containerd
+    state: present
+
+- name: Create containerd config directory
+  file:
+    path: /etc/containerd
+    state: directory
+    mode: '0755'
+
+- name: Configure containerd with SystemdCgroup
+  template:
+    src: containerd_config.toml.j2
+    dest: /etc/containerd/config.toml
+    mode: '0644'
+
+- name: Restart and enable containerd service
+  service:
+    name: containerd
+    state: restarted
+    enabled: yes
+
+# 3. Kubernetes Repository and Components Installation
+- name: Create apt keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download Kubernetes GPG key
+  get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key"
+    dest: /tmp/kubernetes-release.key
+    mode: '0644'
+
+- name: De-armor Kubernetes GPG key
+  command: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add Kubernetes APT repository
+  copy:
+    content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    mode: '0644'
+
+- name: Update apt cache and install Kubernetes packages
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: yes
+
+- name: Pin Kubernetes packages versions
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable kubelet service
+  service:
+    name: kubelet
+    enabled: yes
+
+# 4. Initialize Kubernetes Cluster
+- name: Check if Kubernetes is already initialized
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_init_check
+
+- name: Generate kubeadm initialization configuration file
+  template:
+    src: kubeadm_config.yaml.j2
+    dest: /tmp/kubeadm_config.yaml
+    mode: '0640'
+  when: not k8s_init_check.stat.exists
+
+- name: Initialize Kubernetes cluster via kubeadm
+  command: kubeadm init --config /tmp/kubeadm_config.yaml
+  register: kubeadm_init_output
+  when: not k8s_init_check.stat.exists
+  changed_when: true
+
+# 5. Configure Kubeconfig for user seiya
+- name: Create .kube directory for seiya
+  file:
+    path: /home/seiya/.kube
+    state: directory
+    owner: seiya
+    group: seiya
+    mode: '0755'
+
+- name: Copy kubeconfig to seiya's home
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/seiya/.kube/config
+    owner: seiya
+    group: seiya
+    mode: '0600'
+    remote_src: yes
+
+# 6. Deploy Add-ons
+- name: Wait for API Server to become healthy
+  pause:
+    seconds: 15
+  when: not k8s_init_check.stat.exists
+
+# CNI (Flannel)
+- name: Deploy Flannel network plugin
+  become_user: seiya
+  command: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+  register: flannel_deploy
+  changed_when: "'created' in flannel_deploy.stdout or 'configured' in flannel_deploy.stdout"
+
+# Untaint Master Node (Allow pods on Control Plane)
+- name: Remove master/control-plane NoSchedule taint
+  become_user: seiya
+  command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+  register: taint_remove
+  changed_when: "'untainted' in taint_remove.stdout"
+  failed_when: false # Ignore if already untainted
+
+# Local Path Storage (StorageClass)
+- name: Deploy Rancher Local Path Storage Provisioner
+  become_user: seiya
+  command: kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+  register: storage_deploy
+  changed_when: "'created' in storage_deploy.stdout or 'configured' in storage_deploy.stdout"
+
+- name: Set Local Path StorageClass as default
+  become_user: seiya
+  command: |
+    kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+  register: sc_default
+  changed_when: "'patched' in sc_default.stdout"
+
+# Ingress Controller (ingress-nginx)
+- name: Download ingress-nginx baremetal deployment manifest
+  get_url:
+    url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/baremetal/deploy.yaml
+    dest: /tmp/ingress_nginx_deploy.yaml
+    mode: '0644'
+
+- name: Modify ingress-nginx manifest to use HostNetwork
+  replace:
+    path: /tmp/ingress_nginx_deploy.yaml
+    regexp: '(\s+dnsPolicy:\s+ClusterFirst)'
+    replace: '\1\n      hostNetwork: true\n      dnsPolicy: ClusterFirstWithHostNet'
+
+- name: Deploy ingress-nginx Controller
+  become_user: seiya
+  command: kubectl apply -f /tmp/ingress_nginx_deploy.yaml
+  register: ingress_nginx_deploy
+  changed_when: "'created' in ingress_nginx_deploy.stdout or 'configured' in ingress_nginx_deploy.stdout"
+
+# cert-manager
+- name: Deploy cert-manager
+  become_user: seiya
+  command: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.5/cert-manager.yaml
+  register: cert_manager_deploy
+  changed_when: "'created' in cert_manager_deploy.stdout or 'configured' in cert_manager_deploy.stdout"
+
+# Metrics Server
+- name: Download Metrics Server manifest
+  get_url:
+    url: https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+    dest: /tmp/metrics_server_deploy.yaml
+    mode: '0644'
+
+- name: Modify Metrics Server manifest to allow insecure TLS
+  replace:
+    path: /tmp/metrics_server_deploy.yaml
+    regexp: '(\s+-\s+--secure-port=10250)'
+    replace: '\1\n        - --kubelet-insecure-tls'
+
+- name: Deploy Metrics Server
+  become_user: seiya
+  command: kubectl apply -f /tmp/metrics_server_deploy.yaml
+  register: metrics_deploy
+  changed_when: "'created' in metrics_deploy.stdout or 'configured' in metrics_deploy.stdout"

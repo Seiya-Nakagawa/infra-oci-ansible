@@ -1,0 +1,28 @@
+- name: restart ssh
+  service:
+    name: ssh
+    state: restarted
+
+- name: reload sysctl
+  command: sysctl --system
+
+- name: restart systemd-resolved
+  service:
+    name: systemd-resolved
+    state: restarted
+
+- name: restart journald
+  service:
+    name: systemd-journald
+    state: restarted
+
+- name: restart fail2ban
+  service:
+    name: fail2ban
+    state: restarted
+
+- name: restart auditd
+  service:
+    name: auditd
+    state: restarted
+  ignore_errors: yes # auditd is notoriously hard to restart in containers/VMs sometimes

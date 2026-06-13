@@ -1,0 +1,239 @@
+---
+# OS Setup and Hardening Tasks
+
+# 1. System Basics
+- name: Set system hostname
+  hostname:
+    name: "{{ system_hostname }}"
+
+- name: Set system timezone
+  timezone:
+    name: "{{ system_timezone }}"
+
+- name: Generate locale ja_JP.UTF-8
+  locale_gen:
+    name: "{{ system_locale }}"
+    state: present
+
+- name: Set system locale
+  debconf:
+    name: locales
+    question: locales/default_environment_locale
+    value: "{{ system_locale }}"
+    vtype: select
+
+# 2. Package Management
+- name: Update apt cache and upgrade system packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Configure needrestart to restart services automatically
+  lineinfile:
+    path: /etc/needrestart/needrestart.conf
+    regexp: '^#?\$nrconf{restart}'
+    line: "$nrconf{restart} = 'a';"
+    state: present
+
+- name: Ensure unattended-upgrades config for security patches
+  copy:
+    src: /etc/apt/apt.conf.d/50unattended-upgrades
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades.bak
+    remote_src: yes
+    force: no
+
+- name: Configure automatic reboots off for unattended-upgrades
+  lineinfile:
+    path: /etc/apt/apt.conf.d/50unattended-upgrades
+    regexp: '^Unattended-Upgrade::Automatic-Reboot\s'
+    line: 'Unattended-Upgrade::Automatic-Reboot "false";'
+    state: present
+
+- name: Install common packages
+  apt:
+    name:
+      - vim
+      - tmux
+      - git
+      - curl
+      - wget
+      - rsync
+      - htop
+      - tree
+      - jq
+      - net-tools
+      - iputils-ping
+      - traceroute
+      - dnsutils
+      - software-properties-common
+      - unzip
+      - ufw
+      - cloud-utils
+      - auditd
+      - apparmor-utils
+      - fail2ban
+    state: present
+
+# 3. User & Group Management
+- name: Ensure group seiya exists
+  group:
+    name: seiya
+    state: present
+
+- name: Ensure user seiya is configured properly
+  user:
+    name: seiya
+    shell: /bin/bash
+    groups: sudo,adm
+    append: yes
+    state: present
+
+- name: Configure passwordless sudo for seiya
+  copy:
+    content: "seiya ALL=(ALL) NOPASSWD: ALL"
+    dest: /etc/sudoers.d/seiya
+    mode: '0440'
+    validate: 'visudo -cf %s'
+
+- name: Disable default ubuntu user
+  user:
+    name: ubuntu
+    shell: /usr/sbin/nologin
+  ignore_errors: yes
+
+# 4. Networking & Firewall
+- name: Disable UFW (managed by OCI Security List)
+  ufw:
+    state: disabled
+
+- name: Configure DNS resolver systemd-resolved
+  lineinfile:
+    path: /etc/systemd/resolved.conf
+    regexp: "^#?DNS="
+    line: "DNS=169.254.169.254"
+  notify: restart systemd-resolved
+
+# 5. Storage & Swap
+- name: Disable swap immediately
+  command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+  changed_when: true
+
+- name: Remove swap from fstab permanently
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+.*)$'
+    replace: '# \1'
+
+- name: Secure /tmp partition in fstab
+  mount:
+    path: /tmp
+    src: tmpfs
+    fstype: tmpfs
+    opts: defaults,nosuid,nodev
+    state: mounted
+
+- name: Secure /dev/shm partition in fstab
+  mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: defaults,nosuid,nodev,noexec
+    state: mounted
+
+# 6. OS Hardening (SSH & Kernel Parameters)
+- name: Create SSH custom config directory
+  file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    mode: '0755'
+
+- name: Configure custom SSH hardening settings
+  template:
+    src: custom_sshd.conf.j2
+    dest: /etc/ssh/sshd_config.d/custom.conf
+    mode: '0600'
+  notify: restart ssh
+
+- name: Apply security sysctl kernel parameters
+  template:
+    src: security_sysctl.conf.j2
+    dest: /etc/sysctl.d/99-security.conf
+    mode: '0644'
+  notify: reload sysctl
+
+- name: Configure system resource limits
+  template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/90-limits.conf
+    mode: '0644'
+
+- name: Configure systemd global limits
+  lineinfile:
+    path: /etc/systemd/system.conf
+    regexp: "^#?DefaultLimitNOFILE="
+    line: "DefaultLimitNOFILE=65535"
+
+- name: Enable fail2ban service
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes
+
+- name: Configure fail2ban local jail
+  copy:
+    content: |
+      [sshd]
+      enabled = true
+      port = ssh
+      filter = sshd
+      logpath = %(sshd_log)s
+      maxretry = 3
+      bantime = 3600
+    dest: /etc/fail2ban/jail.local
+    mode: '0644'
+  notify: restart fail2ban
+
+- name: Ensure auditd is enabled and started
+  service:
+    name: auditd
+    state: started
+    enabled: yes
+
+# 7. Log & Operation Management
+- name: Configure journald storage and limits
+  blockinfile:
+    path: /etc/systemd/journald.conf
+    insertafter: "^\\[Journal\\]"
+    block: |
+      Storage=persistent
+      SystemMaxUse=1G
+      SystemMaxFileSize=100M
+  notify: restart journald
+
+- name: Configure logrotate defaults (compress and keep 14 generations)
+  replace:
+    path: /etc/logrotate.conf
+    regexp: '^rotate\s+\d+'
+    replace: 'rotate 14'
+
+- name: Ensure logrotate compression is enabled
+  lineinfile:
+    path: /etc/logrotate.conf
+    regexp: '^#compress'
+    line: 'compress'
+
+- name: Maintain Oracle Cloud Agent
+  service:
+    name: oracle-cloud-agent
+    state: started
+    enabled: yes
+  ignore_errors: yes
+
+- name: Disable kdump-tools service (resource optimization)
+  service:
+    name: kdump-tools
+    state: stopped
+    enabled: no
+  ignore_errors: yes
