@@ -21,12 +21,13 @@
     name: mysql
     state: started
     enabled: yes
+  when: not ansible_check_mode
 
 - name: Restart MySQL if config changed
   service:
     name: mysql
     state: restarted
-  when: mysql_config.changed
+  when: not ansible_check_mode and mysql_config.changed
 
 # Security Hardening (Equivalent to mysql_secure_installation)
 - name: Remove anonymous MySQL users
@@ -34,6 +35,7 @@
     name: ""
     state: absent
     login_unix_socket: /var/run/mysqld/mysqld.sock
+  when: not ansible_check_mode
 
 - name: Disallow root remote login
   mysql_user:
@@ -45,12 +47,14 @@
     - "{{ ansible_hostname }}"
     - "127.0.0.1"
     - "::1"
+  when: not ansible_check_mode
 
 - name: Remove test database
   mysql_db:
     name: test
     state: absent
     login_unix_socket: /var/run/mysqld/mysqld.sock
+  when: not ansible_check_mode
 
 # Database and App User Setup
 - name: Create application databases
@@ -61,6 +65,7 @@
     state: present
     login_unix_socket: /var/run/mysqld/mysqld.sock
   loop: "{{ mysql_databases }}"
+  when: not ansible_check_mode
 
 - name: Create application users and grant privileges
   mysql_user:
@@ -69,6 +74,7 @@
     priv: "{{ item.priv }}"
     host: "{{ item.host }}"
     state: present
-    auth_plugin: caching_sha2_password
+    plugin: caching_sha2_password
     login_unix_socket: /var/run/mysqld/mysqld.sock
   loop: "{{ mysql_users }}"
+  when: not ansible_check_mode

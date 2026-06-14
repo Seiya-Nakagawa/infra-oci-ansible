@@ -1,7 +1,0 @@
-- name: Configure OCI Instance (OS, Kubernetes, MySQL)
-  hosts: all
-  become: yes
-  roles:
-    - os_setup
-    - kubernetes
-    - mysql

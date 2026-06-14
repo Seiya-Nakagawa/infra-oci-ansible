@@ -113,5 +113,5 @@ echo "=== [4/4] Ansibleの実行を開始します... ==="
 export ANSIBLE_SSH_COMMON_ARGS="-o ProxyCommand=\"$PROXY_CMD\""
 
 # Run ansible-playbook with passed arguments
-cd "$SCRIPT_DIR/.."
+cd "$SCRIPT_DIR/../ansible"
 ansible-playbook -i hosts.yml site.yml "$@"

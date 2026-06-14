@@ -103,9 +103,17 @@
   ignore_errors: yes
 
 # 4. Networking & Firewall
+- name: Check if UFW is installed
+  command: which ufw
+  register: ufw_check
+  ignore_errors: yes
+  changed_when: false
+  check_mode: no
+
 - name: Disable UFW (managed by OCI Security List)
   ufw:
     state: disabled
+  when: ufw_check.rc is defined and ufw_check.rc == 0
 
 - name: Configure DNS resolver systemd-resolved
   lineinfile:
@@ -113,6 +121,35 @@
     regexp: "^#?DNS="
     line: "DNS=169.254.169.254"
   notify: restart systemd-resolved
+
+- name: Load overlay and br_netfilter modules immediately
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Configure kernel modules to load on boot
+  copy:
+    content: |
+      overlay
+      br_netfilter
+    dest: /etc/modules-load.d/k8s.conf
+    mode: '0644'
+
+- name: Configure sysctl parameters for Kubernetes
+  copy:
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+    dest: /etc/sysctl.d/k8s.conf
+    mode: '0644'
+
+- name: Apply sysctl parameters
+  command: sysctl --system
+  changed_when: true
 
 # 5. Storage & Swap
 - name: Disable swap immediately
@@ -180,6 +217,7 @@
     name: fail2ban
     state: started
     enabled: yes
+  when: not ansible_check_mode
 
 - name: Configure fail2ban local jail
   copy:
@@ -193,6 +231,7 @@
       bantime = 3600
     dest: /etc/fail2ban/jail.local
     mode: '0644'
+  when: not ansible_check_mode
   notify: restart fail2ban
 
 - name: Ensure auditd is enabled and started
@@ -200,6 +239,7 @@
     name: auditd
     state: started
     enabled: yes
+  when: not ansible_check_mode
 
 # 7. Log & Operation Management
 - name: Configure journald storage and limits
@@ -224,16 +264,4 @@
     regexp: '^#compress'
     line: 'compress'
 
-- name: Maintain Oracle Cloud Agent
-  service:
-    name: oracle-cloud-agent
-    state: started
-    enabled: yes
-  ignore_errors: yes
 
-- name: Disable kdump-tools service (resource optimization)
-  service:
-    name: kdump-tools
-    state: stopped
-    enabled: no
-  ignore_errors: yes

@@ -27,32 +27,32 @@
 - `terraform output` から自動的に接続情報を取得し、OCI Bastion セッションを確保（または作成）。
 - 取得した SSH コマンドから ProxyCommand を抽出し、`ANSIBLE_SSH_COMMON_ARGS`環境変数にセットして `ansible-playbook` を実行するラッパースクリプト。
 
-#### [NEW] [hosts.yml](file:///home/seiya/git/infra-oci-ansible/hosts.yml)
+#### [NEW] [hosts.yml](file:///home/seiya/git/infra-oci-ansible/ansible/hosts.yml)
 - ターゲットホスト（`10.0.1.60`）のインベントリ定義。
 
-#### [NEW] [group_vars/all.yml](file:///home/seiya/git/infra-oci-ansible/group_vars/all.yml)
+#### [NEW] [group_vars/all.yml](file:///home/seiya/git/infra-oci-ansible/ansible/group_vars/all.yml)
 - パッケージ定義、k8sバージョン（`1.30`）、MySQLデータベース名、ユーザー定義などの共通変数。
 
-#### [NEW] [site.yml](file:///home/seiya/git/infra-oci-ansible/site.yml)
-- `os_setup`, `kubernetes`, `mysql` のロールを順次実行するメインプレイブック。
+#### [NEW] [site.yml](file:///home/seiya/git/infra-oci-ansible/ansible/site.yml)
+- `os`, `kubernetes`, `mysql` のロールを順次実行するメインプレイブック。
 
 ---
 
-### 3. OS 設定ロール (`roles/os_setup`)
+### 3. OS 設定ロール (`roles/os`)
 
-#### [NEW] [roles/os_setup/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/roles/os_setup/tasks/main.yml)
+#### [NEW] [roles/os/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/ansible/roles/os/tasks/main.yml)
 - OS 基本設定、ユーザー管理、SSH 堅牢化、カーネルパラメータ設定、リソース制限、Fail2Ban/Auditd、journald/logrotate 等のタスク定義。
 
 #### [NEW] templates 類
-- [custom_sshd.conf.j2](file:///home/seiya/git/infra-oci-ansible/roles/os_setup/templates/custom_sshd.conf.j2) (SSH設定)
-- [security_sysctl.conf.j2](file:///home/seiya/git/infra-oci-ansible/roles/os_setup/templates/security_sysctl.conf.j2) (カーネルパラメータ)
-- [limits.conf.j2](file:///home/seiya/git/infra-oci-ansible/roles/os_setup/templates/limits.conf.j2) (リソース制限)
+- [custom_sshd.conf.j2](file:///home/seiya/git/infra-oci-ansible/ansible/roles/os/templates/custom_sshd.conf.j2) (SSH設定)
+- [security_sysctl.conf.j2](file:///home/seiya/git/infra-oci-ansible/ansible/roles/os/templates/security_sysctl.conf.j2) (カーネルパラメータ)
+- [limits.conf.j2](file:///home/seiya/git/infra-oci-ansible/ansible/roles/os/templates/limits.conf.j2) (リソース制限)
 
 ---
 
 ### 4. Kubernetes 構築ロール (`roles/kubernetes`)
 
-#### [NEW] [roles/kubernetes/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/roles/kubernetes/tasks/main.yml)
+#### [NEW] [roles/kubernetes/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/ansible/roles/kubernetes/tasks/main.yml)
 - `containerd` および k8s コンポーネント（1.30）の導入。
 - クラスターの初期化 (`kubeadm init`）、kubeconfig の配置、CNI (Flannel) のデプロイ。
 - Masterノードの Taint 解除（シングルノード実行許可）。
@@ -62,11 +62,11 @@
 
 ### 5. MySQL 構築ロール (`roles/mysql`)
 
-#### [NEW] [roles/mysql/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/roles/mysql/tasks/main.yml)
+#### [NEW] [roles/mysql/tasks/main.yml](file:///home/seiya/git/infra-oci-ansible/ansible/roles/mysql/tasks/main.yml)
 - MySQL パッケージ導入、`mysqld.cnf` の配置。
 - 初期セキュリティ設定、データベース `laravel_db` とユーザー `laravel_user` の作成。
 
-#### [NEW] [roles/mysql/templates/mysqld.cnf.j2](file:///home/seiya/git/infra-oci-ansible/roles/mysql/templates/mysqld.cnf.j2)
+#### [NEW] [roles/mysql/templates/mysqld.cnf.j2](file:///home/seiya/git/infra-oci-ansible/ansible/roles/mysql/templates/mysqld.cnf.j2)
 - 文字コード `utf8mb4` や接続制限を定義した設定ファイル。
 
 ---
